@@ -15,20 +15,40 @@ class CoreDataImporter {
     }
     
     func sync(entries: [EntryRepresentation], completion: @escaping (Error?) -> Void = { _ in }) {
-        
+        print("Syncing starting...")
         self.context.perform {
+            let identifiers = entries.compactMap { $0.identifier }
+            
+            let existingEntries = self.getAllExistingEntries(identifiers: identifiers)
+            let existingEntryIdentifiers = existingEntries.compactMap { $0.identifier }
+            let existingEntriesDict = Dictionary(uniqueKeysWithValues: existingEntries.map{ ($0.identifier, $0) })
+            
             for entryRep in entries {
                 guard let identifier = entryRep.identifier else { continue }
                 
-                let entry = self.fetchSingleEntryFromPersistentStore(with: identifier, in: self.context)
-                if let entry = entry, entry != entryRep {
+                if existingEntryIdentifiers.contains(identifier) {
+                    guard let entry = existingEntriesDict[identifier] else { continue }
                     self.update(entry: entry, with: entryRep)
-                } else if entry == nil {
+                } else {
                     _ = Entry(entryRepresentation: entryRep, context: self.context)
                 }
             }
             completion(nil)
         }
+        print("Syncing finished!")
+    }
+    
+    private func getAllExistingEntries(identifiers: [String]) -> [Entry] {
+        let fetchRequest: NSFetchRequest<Entry> = Entry.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "identifier IN %@", identifiers)
+        
+        var results: [Entry] = []
+        do {
+            results = try context.fetch(fetchRequest)
+        } catch {
+            NSLog("Error fetching single entry: \(error)")
+        }
+        return results
     }
     
     private func update(entry: Entry, with entryRep: EntryRepresentation) {
